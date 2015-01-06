@@ -6,7 +6,15 @@ import java.util.Map;
 
 public class SpecializedOpenHashMap<any K, any V>
 {
+    public static interface Hasher<any T>
+    {
+        int hash(T t);
+        boolean areEqual(T a, T b);
+    }
+
     private final double loadFactor;
+    private final Hasher<K> keyHasher;
+    private final Hasher<V> valueHasher;
     private int resizeThreshold;
     private int capacity;
     private int mask;
@@ -21,9 +29,9 @@ public class SpecializedOpenHashMap<any K, any V>
 //    private final KeySet keySet = new KeySet();
 //    private final EntrySet<V> entrySet = new EntrySet<>();
 
-    public SpecializedOpenHashMap()
+    public SpecializedOpenHashMap(Hasher<K> keyHasher, Hasher<V> valueHasher)
     {
-        this(8, 0.6);
+        this(8, 0.6, keyHasher, valueHasher);
     }
 
     /**
@@ -32,15 +40,17 @@ public class SpecializedOpenHashMap<any K, any V>
      * @param initialCapacity for the backing array
      * @param loadFactor      limit for resizing on puts
      */
-    public SpecializedOpenHashMap(final int initialCapacity, final double loadFactor)
+    public SpecializedOpenHashMap(final int initialCapacity, final double loadFactor, Hasher<K> keyHasher, Hasher<V> valueHasher)
     {
+        this.keyHasher = keyHasher;
+        this.valueHasher = valueHasher;
         this.loadFactor = loadFactor;
         capacity = nextPowerOfTwo(initialCapacity);
         mask = capacity - 1;
         resizeThreshold = (int)(capacity * loadFactor);
 
-        keys = (K[]) new Object[capacity];
-        values = (V[]) new Object[capacity];
+        keys = new K[capacity];
+        values = new V[capacity];
 
         isPresent = new BitSet(capacity);
     }
@@ -108,15 +118,11 @@ public class SpecializedOpenHashMap<any K, any V>
         // TODO: How should null checks be handled.
         // requireNonNull(key, "Null keys are not permitted");
 
-        if (key instanceof Object)
-        {
-        }
-
         int index = hash(key);
 
         while (isPresent.get(index))
         {
-            if (key.equals(keys[index]))
+            if (keyHasher.areEqual(key, keys[index]))
             {
                 return true;
             }
@@ -137,7 +143,7 @@ public class SpecializedOpenHashMap<any K, any V>
         int i = capacity;
         while (--i != -1)
         {
-            if (isPresent.get(i) && value.equals(values[i]))
+            if (isPresent.get(i) && valueHasher.areEqual(value, values[i]))
             {
                 return true;
             }
@@ -159,7 +165,7 @@ public class SpecializedOpenHashMap<any K, any V>
 
         while (isPresent.get(index))
         {
-            if (key.equals(keys[index]))
+            if (keyHasher.areEqual(key, keys[index]))
             {
                 return values[index];
             }
@@ -189,7 +195,7 @@ public class SpecializedOpenHashMap<any K, any V>
 
         while (isPresent.get(index))
         {
-            if (key.equals(keys[index]))
+            if (keyHasher.areEqual(key, keys[index]))
             {
                 oldValue = values[index];
                 found = true;
@@ -233,7 +239,7 @@ public class SpecializedOpenHashMap<any K, any V>
         {
             value = values[index];
 
-            if (key.equals(keys[index]))
+            if (keyHasher.areEqual(key, keys[index]))
             {
                 // TODO: What to do here.
                 // We need to clear this value out somehow, but we don't know if it is a reference or a value.
@@ -343,8 +349,8 @@ public class SpecializedOpenHashMap<any K, any V>
         mask = newCapacity - 1;
         resizeThreshold = (int)(newCapacity * loadFactor);
 
-        final K[] tempKeys = (K[]) new Object[capacity];
-        final V[] tempValues = (V[]) new Object[capacity];
+        final K[] tempKeys = new K[capacity];
+        final V[] tempValues = new V[capacity];
         final BitSet tempIsPresent = new BitSet(capacity);
 
         for (int i = 0, size = values.length; i < size; i++)
@@ -402,7 +408,7 @@ public class SpecializedOpenHashMap<any K, any V>
 
     private int hash(final K key)
     {
-        int hc = key.hashCode();
+        int hc = keyHasher.hash(key);
         int hash = hc ^ (hc >>> 32);
         hash = (hash << 1) - (hash << 8);
         return hash & mask;
@@ -661,7 +667,7 @@ public class SpecializedOpenHashMap<any K, any V>
 
     public static void main(String[] args)
     {
-        SpecializedOpenHashMap<int, int> m = new SpecializedOpenHashMap<>();
+        SpecializedOpenHashMap<int, int> m = new SpecializedOpenHashMap<>(new IntHasher(), new IntHasher());
 
         m.put(123, 123, 0);
         m.put(456, 456, 0);
@@ -675,5 +681,18 @@ public class SpecializedOpenHashMap<any K, any V>
         System.out.println(m.containsValue(789));
 
         System.out.println(m.getOrDefault(789, 789));
+    }
+
+    private static class IntHasher implements Hasher<int>
+    {
+        public int hash(int t)
+        {
+            return t;
+        }
+
+        public boolean areEqual(int a, int b)
+        {
+            return a == b;
+        }
     }
 }
